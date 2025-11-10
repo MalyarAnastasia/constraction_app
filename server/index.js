@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
+const jwt = require('jwt');
 
 const { Pool } = require ('pg');
 
@@ -72,11 +73,52 @@ app.post('/api/auth/register', async (req, res) => {
     console.error('Ошибка регистрации', err);
     res.status(400)({massege: 'Ошибка сервера при регистрации пользователя'});
   }
-  
-
 });
 
+app.post('/api/auth/login', async (req, res) =>{
+  try{
+    const {username, password} = req.body; 
+    const user = await pool.query(`SELECT user_id, username, password_hash, role_id FROM users WHERE username = $1`, [username]);
 
+    if (user.rows.length === 0) {
+      return res.status(401).json({
+        massege: 'Неверный логин или пароль'
+      });
+    };
+
+    const truePassword = await bcrypt.compare(password, user.rows[0].password_hash);
+
+    if (!truePassword){
+      return res.status(401).json({
+        massege:'Неверный логмн или пароль'
+      });
+    };
+
+    if (truePassword){
+      const UserData = user.rows[0];
+      const payload = {
+        id: UserData.user_id,
+        role: UserData.role_id
+      };
+
+      const secret = process.env.JWT_SECRET
+
+      const token = jwt.sign(payload, secret, { expiresIn: '1h' })
+
+      res.json({
+      message: 'Вход выполнен успешно',
+      token, 
+      user: { id: userData.user_id, username: userData.username, role: userData.role_id }
+  });
+};
+
+  }catch (err){
+    console.error('Ошибка регистрации', err);
+    res.status(500).json({
+      massege:'Ошибка регистрации'
+    });
+  };
+});
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
