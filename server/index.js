@@ -2,9 +2,9 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
-const jwt = require('jwt');
-
+const jwt = require('jsonwebtoken');
 const { Pool } = require ('pg');
+const authMiddleware = require('./middleware/authMiddleware.js');
 
 const pool = new Pool({
     user: process.env.PG_USER,
@@ -25,7 +25,7 @@ app.get('/api/projects', (req, res) => {
 app.use(express.json())
 
 
-app.get('/api/users', async (req, res) => {
+app.get('/api/users', authMiddleware, async (req, res) => {
   try{
     const result = await pool.query(`SELECT * FROM users`);
     res.json(result.rows);
