@@ -2,16 +2,14 @@ require('dotenv').config();
 
 module.exports = function(requiredRole){
     return function (req, res, next){
-
         try{
-
-            const userRole = req.user.role;
+           const userRole = req.user.role;
         
-        if(userRole === requiredRole){
+        if(requiredRole.includes(userRole)){
             next ()
         } else {
             return res.status(403).json({
-                massege:'У вас недостаточно прав ждя это действия'
+                massege:'У вас недостаточно прав для это действия'
             });
         }
 
