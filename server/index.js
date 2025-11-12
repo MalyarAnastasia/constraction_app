@@ -5,6 +5,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { Pool } = require ('pg');
 const authMiddleware = require('./middleware/authMiddleware.js');
+const roleMiddleware = require('./middleware/roleMiddleware');
 
 const pool = new Pool({
     user: process.env.PG_USER,
@@ -60,7 +61,7 @@ app.post('/api/auth/register', async (req, res) => {
   VALUES ($1, $2, $3, $4, $5, NOW()) 
   RETURNING user_id, username, role_id`;
 
-  const values = [username, hashedPassword, full_name, email, 3];
+  
   const newUser = await pool.query(query, values);
 
   res.status(201).json({
@@ -119,6 +120,135 @@ app.post('/api/auth/login', async (req, res) =>{
     });
   };
 });
+
+  app.post('/api/projects', authMiddleware, roleMiddleware([2, 1]), async (req, res) =>{
+
+    try{
+
+      const {project_name, descripsion, start_date, end_date} = req.body;
+
+      if(!project_name){
+        return res.status(400).json({
+          massege: 'Введите название проекта'
+        })
+      };
+
+      const manager_id = req.user.id;
+
+      const query = `
+      INSERT INTO projects (project_name, description, start_date, end_date, manager_id, created_at) 
+      VALUES ($1, $2, $3, $4, $5, NOW())
+      RETURNING project_id, project_name, description, manager_id, created_at`;
+
+      const values = [project_name, description, start_date || null, end_date || null, managerId];
+
+      const NewProject = await pool.query(query, values);
+
+      res.status(201).json({
+        massege: 'Проект успешно создан',
+        project: NewProject.rows[0]
+      });
+
+    }catch(err){
+      console.error('Неудается создать проект', err);
+      return res.status(500).json({
+        massege: 'Неудается создать проект'
+      })
+    }
+  });
+
+app.get('/api/projects', authMiddleware, async (req, res) =>{
+  try{
+    const result = await pool.query(`SELECT * FROM projects`);
+    res.json(result.rows);
+
+  }catch(err){
+    console.error('Ошибка получания проетов', err)
+    res.status(500).json({
+      massege: 'Ошибка получения проектов'
+    })
+  }
+});
+
+app.get('/api/projects/:id', authMiddleware, async (req, res) => {
+  try{
+  const ProjectId = req.params.id;
+  const query = `
+              SELECT project_id, project_name, description, manager_id, created_at
+              FROM projects 
+              WHERE project_id = $1`;
+
+  }catch(err){    
+    console.error('Ошибка получания проетов', err)
+    res.status(500).json({
+      massege: 'Ошибка получения проектов'
+    })
+  }
+});
+
+app.put('/api/projects/:id', authMiddleware, roleMiddleware([1, 2]), async (req, res) => {
+  try{
+    const {project_name, description, start_date, end_date} = req.body;
+    const projectId = req.params.id;
+
+    if(!project_name){
+      return res.status(400).json({
+        massege: 'Требуется название проекта для обновления'
+      })
+    };
+
+    const query = `UPDATE projects SET project_name = $1, description = $2, start_date = $3, end_date = $4 
+    WHERE project_id = $5 RETURNING *`
+
+    const values = [project_name, description, start_date || null, end_date || null, ProjectId]
+
+    const updatedProject = await pool.query(query, values);
+
+    if (updatedProject.rows.length === 0) {
+      return res.status(404).json({ message: `Проект с ID ${projectId} не найден.` });
+    }
+
+
+    res.status(200).json({
+      message: 'Проект успешно обновлен.',
+      project: updatedProject.rows[0]
+    });
+
+  }catch (err){
+    console.error('Ошибка при обновлении проекта', err);
+    res.status(500).json({
+      massege: 'Ошибка при обновлении проекта'
+    })
+  }
+});
+
+app.delete('/api/projects/:id', authMiddleware, roleMiddleware([1, 2]), async (req, res) => {
+  try{
+
+    const projectId = req.params.id;
+
+    const query = `DELETE FROM projects WHERE project_id = $1`
+
+    const values = [projectId];
+
+    const DeleteProject = await pool.query(query, values);
+
+    if (DeleteProject.rowCount === 0){
+      return res.status(404).json({
+        massege: `Проект с ID ${projectId} не найден.`
+      });
+    };
+
+  res.status(204).send();
+
+  }catch(err){
+    console.error('Ошибка при удалении проекта', err);
+    return res.status(500).json({
+      massege:'Ошибка при удалении проекта'
+    })
+  }
+});
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
