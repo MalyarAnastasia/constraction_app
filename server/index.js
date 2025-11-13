@@ -305,8 +305,12 @@ app.get ('/api/defects/by-project/:projectId', authMiddleware, async(req, res) =
 });
 
 app.put('/api/defects/:id', authMiddleware, roleMiddleware([1, 2]), async(req, res) =>{
+
+  const client = await pool.connect();
+
   try{
     const DefectId = req.params.id;
+    const userId = req.user.id;
     const {title, description, priority, status_id, due_date, assignee_id} = req.body;
 
   if (!title && !description && !priority && !status_id && !assignee_id && !due_date) {
@@ -315,25 +319,56 @@ app.put('/api/defects/:id', authMiddleware, roleMiddleware([1, 2]), async(req, r
   });
   }
 
+    await client.query(`BEGIN`);
+
+    OldDefectQuery = `SELECT * FROM defects WHERE defect_id = $1`
+    OldDefectResult = await pool.query(OldDefectQuery, [DefectId]);
+    const oldDefect = OldDefectResult.rows[0];
+
     const query = `UPDATE defects SET title = $1, description = $2, priority = $3, status_id = $4, assignee_id = $5, 
-     due_date = $6, updated_at = NOW() RETURNING *`
+     due_date = $6, updated_at = NOW() WHERE defect_id = $7 RETURNING *`
     const values = [title, description, priority, status_id, assignee_id || null, due_date || null, DefectId];
 
-    const updatedDefect = await pool.query(query, values);
+    const updatedDefect = await client.query(query, values);
 
     if (updatedDefect.rows.length === 0) {
       return res.status(404).json({ message: `Дефект с ID ${defectId} не найден.` });
     }
-    return res.status(200).json({
-      message: 'Дефект успешно обновлен.',
-      defect: updatedDefect.rows[0]
-    });
+
+    const historyEntries = [];
+    const filestolog = ['title', 'description', 'priority', 'status_id', 'assignee_id', 'due_date'];
+    
+    for (const field of filestolog){
+      const oldValues = oldDefect[field];
+      const newValue = newDefect[field];
+      if (newValue !== undefined && String(newValue) !== String(oldValue)) {
+          historyEntries.push({
+          field: field, 
+          old: oldValue,
+          new: newValue
+        })
+      }
+    };
+
+  for (const entry of historyEntries) {
+            const historyQuery = `INSERT INTO defect_history (defect_id, changed_by, field_name, old_value, new_value, change_date) 
+            VALUES ($1, $2, $3, $4, $5, NOW())`;
+            
+            const historyValues = [defectId, userId, entry.field, String(entry.old), String(entry.new)];
+            await client.query(historyQuery, historyValues);
+        }
+
+    await client.query(`COMMIT`);
+    res.status(200).json({ message: 'Дефект успешно обновлен', defect: updatedDefect.rows[0] });
 
   }catch(err){
-    console.error('Ошибка при обновлении дефекта', err);
+    await client.query(`ROLLBACK`);
+    console.error('Ошибка при обновлении дефекта (транзакции)', err);
     return res.status(500).json({
       massege: 'Ошибка при обновлении дефекта'
     })
+  }finally{
+    client.release();
   }
 });
 
@@ -358,6 +393,46 @@ app.delete('/api/defects/:id', authMiddleware, roleMiddleware([1, 2]), async (re
     console.error('Ошибка при удалении дефекта', err);
     return res.status(500).json({
       massege: 'Ошибка при удалении дефекта'
+    })
+  }
+});
+
+app.get('api/defects/:id', authMiddleware, async (req, res) => {
+  try{
+    const DefectId = req.params.id;
+    
+    const DefectQuery = `SELECT * FROM defects WHERE defect_id = $1`;
+    const values = [DefectId];
+    const InfoResult = await pool.query(DefectQuery, values);
+
+  if (!defectData) {
+      return res.status(404).json({
+          message: `Дефект с ID ${defectId} не найден.`
+      });
+    }
+
+    const HistoryQuery = `SELECT * FROM defect_history WHERE defect_id = $1 ORDER BY timestamp ASC`;
+    const HistoryResult = await pool.query(HistoryQuery, values);
+
+    const defectData = InfoResult.rows[0];
+    const defectHistory = HistoryResult.rows[0];
+
+    if(!HistoryQuery){
+      res.status(500).json({
+        massege: 'Данного дефекта не существует или у него нет истории'
+      })
+    }
+
+    res.json({
+      defect: defectData,
+      history: defectHistory
+    });
+  }
+  
+  catch(err){
+    console.error('Ошибка получения истории по заданному дефекту', err);
+    res.status(500).json({
+      massege: 'Ошибка получения истории по заданному дефекту'
     })
   }
 });
