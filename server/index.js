@@ -61,7 +61,7 @@ app.post('/api/auth/register', async (req, res) => {
   VALUES ($1, $2, $3, $4, $5, NOW()) 
   RETURNING user_id, username, role_id`;
 
-  
+
   const newUser = await pool.query(query, values);
 
   res.status(201).json({
@@ -125,7 +125,7 @@ app.post('/api/auth/login', async (req, res) =>{
 
     try{
 
-      const {project_name, descripsion, start_date, end_date} = req.body;
+      const {project_name, description, start_date, end_date} = req.body;
 
       if(!project_name){
         return res.status(400).json({
@@ -249,6 +249,118 @@ app.delete('/api/projects/:id', authMiddleware, roleMiddleware([1, 2]), async (r
   }
 });
 
+app.post('api/defects', authMiddleware, roleMiddleware([1, 2]), async(req, res) =>{
+  try{
+    const {title, description, project_id, priority, due_date, assignee_id} = req.body;
+    const RepoterId = req.user.id;
+
+
+    if (!title || !priority || !project_id) {
+       return res.status(400).json({ 
+       message: 'Требуются: Заголовок, Приоритет и ID Проекта.' 
+     });
+     }
+
+    const query = `INSERT INTO defects (title, description, priority, status_id, assignee_id, 
+    reporter_id, project_id, due_date, created_at)
+    VALUES ($1, $2, $3, 1, $4, $5, $6, $7, NOW())
+    RETURNING *`
+
+    const values = [title, description, priority, assignee_id || null, RepoterId, project_id, due_date || null];
+    const newDefect = await pool.query(query, values);
+
+    res.status(201).json({
+      massege: 'Дефект успешно создан',
+      project: newDefect.rows[0]
+    });
+
+  }catch(err){
+    console.error('Ошибка при создании дефекта')
+    return res.status(500).json({
+      massege: 'Ошибка при добавлении проекта'
+    })
+  }
+});
+
+app.get ('/api/defects/by-project/:projectId', authMiddleware, async(req, res) =>{
+  try{
+    const ProjectId = req.params.projectId;
+    const query = `SELECT * FROM defects where project_id = $1`
+
+    if(!ProjectId){
+      res.status(400).send({
+        massege: 'Дефект не найден'
+    });
+    };
+
+    const result = await pool.query(query, [ProjectId]);
+    res.json = result.rows[0];
+
+  }catch(err){
+    console.error('Ошибка получения дефекта по id', err);
+    return res.status(500).json({
+      massege: 'Ошибка получения дефекта'
+    })
+  }
+});
+
+app.put('/api/defects/:id', authMiddleware, roleMiddleware([1, 2]), async(req, res) =>{
+  try{
+    const DefectId = req.params.id;
+    const {title, description, priority, status_id, due_date, assignee_id} = req.body;
+
+  if (!title && !description && !priority && !status_id && !assignee_id && !due_date) {
+    return res.status(400).json({ 
+    message: 'Необходимо передать хотя бы одно поле для обновления.' 
+  });
+  }
+
+    const query = `UPDATE defects SET title = $1, description = $2, priority = $3, status_id = $4, assignee_id = $5, 
+     due_date = $6, updated_at = NOW() RETURNING *`
+    const values = [title, description, priority, status_id, assignee_id || null, due_date || null, DefectId];
+
+    const updatedDefect = await pool.query(query, values);
+
+    if (updatedDefect.rows.length === 0) {
+      return res.status(404).json({ message: `Дефект с ID ${defectId} не найден.` });
+    }
+    return res.status(200).json({
+      message: 'Дефект успешно обновлен.',
+      defect: updatedDefect.rows[0]
+    });
+
+  }catch(err){
+    console.error('Ошибка при обновлении дефекта', err);
+    return res.status(500).json({
+      massege: 'Ошибка при обновлении дефекта'
+    })
+  }
+});
+
+app.delete('/api/defects/:id', authMiddleware, roleMiddleware([1, 2]), async (req, res) => {
+  try{
+
+    const DefectId = req.params.id;
+    const query = `DELETE FROM defect WHERE defect_id = $1`
+    const values = [DefectId]
+
+    const DeleteDefect = await pool.query(query, values);
+
+    if (DeleteDefect.rowCount === 0){
+      return res.status(404).json({
+        massege: `Дефект с id ${DefectId} не найден`
+      })
+    };
+
+    res.status(204).send;
+
+  }catch(err){
+    console.error('Ошибка при удалении дефекта', err);
+    return res.status(500).json({
+      massege: 'Ошибка при удалении дефекта'
+    })
+  }
+});
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
