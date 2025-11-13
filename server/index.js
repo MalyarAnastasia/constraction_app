@@ -437,6 +437,38 @@ app.get('api/defects/:id', authMiddleware, async (req, res) => {
   }
 });
 
+app.get('api/defects', authMiddleware, async (req, res) =>{
+  try{
+    let query = `SELECT * FROM defects`
+
+    const conditions = [];
+    const values = [];
+
+    if (req.query.status_id){
+      values.push(req.query.status_id);
+      conditions.push(`status_id = $${values.length}`)
+    };
+
+    if (req.query.assignee_id){
+      values.push(req.query.assignee_id);
+      conditions.push(`assignee_id = $${values.length}`)
+    }
+
+    if (conditions.length > 0) {
+        query += ' WHERE ' + conditions.join(' AND ');
+    }
+    
+    const defects = await pool.query(query, values);
+    res.json(defects.rows);
+
+  }catch(err){
+    console.error('Ошибка фильтрации', err);
+    return res.status(500).json({
+      massege: 'Ошибка фильтрации'
+    })
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Сервер запущен на порту ${PORT}`);
