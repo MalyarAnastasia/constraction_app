@@ -5,7 +5,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { Pool } = require ('pg');
 const authMiddleware = require('./middleware/authMiddleware.js');
-const roleMiddleware = require('./middleware/roleMiddleware');
+const roleMiddleware = require('./middleware/roleMiddleware.js');
 
 const pool = new Pool({
     user: process.env.PG_USER,
@@ -468,6 +468,46 @@ app.get('api/defects', authMiddleware, async (req, res) =>{
     })
   }
 });
+
+app.get('/api/export/defects', authMiddleware, roleMiddleware([1, 2]), async(req, res) =>{
+  try{
+    const query = await pool.query(`SELECT SELECT defect_id, title, description, status_id, priority, assignee_id, reporter_id, project_id,
+    due_date, created_at, updated_at from defects ORDER BY defect_id ASC`);
+    const defectRsults = await pool.query(query);
+    const defects = defectRsults.rows[0];
+
+    if(defects.length === 0){
+      res.status(404).json({
+      massege: 'Нет данных для экспорта'
+      })
+    }
+
+    const headers = Object.keys(defects[0]);
+    const HederRow = headers.join(';');
+
+    const dataRows = defects.map(defect => {
+        return headers.map(header => {
+          let value = defect[header];
+          if (typeof value === 'string') {
+             value = value.replace(/"/g, '""').replace(/\n/g, ' '); 
+          } else if (value === null || value === undefined) {
+            value = ''; 
+          }
+          return `"${value}"`;
+    }).join(';'); 
+});
+
+    res.set('Content-Type', 'text/csv; charset=utf-8');
+    res.set('Content-Disposition', 'attachment; filename="defects_export.csv"');
+    res.send(csvData);
+
+  }catch(err){
+    console.error('Ошибка экспорте дефектов');
+    res.status(500).json({
+      massege:'Ошибка при экспорте данных'
+    })
+  };
+})
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
