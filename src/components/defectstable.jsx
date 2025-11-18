@@ -1,8 +1,61 @@
-import React from 'react';
-import { Eye, Edit2, Trash2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react'; 
+import { Eye, Edit2, Trash2, Loader2, Frown } from 'lucide-react';
 
 export default function DefectsTable({ limit }) {
-  const defects = []
+  const [defects, setDefects] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    async function fetchDefects() {
+      try {
+        const response = await fetch('/api/defects'); 
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch defects. Server returned error.');
+        }
+
+        const data = await response.json();
+        setDefects(data); 
+
+      } catch (err) {
+        console.error("Error fetching data:", err);
+        setError("Не удалось загрузить данные о дефектах.");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchDefects();
+  }, []); 
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center p-10 text-blue-600">
+        <Loader2 className="animate-spin mr-2" size={24} />
+        <span className="font-medium">Загрузка дефектов...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col justify-center items-center p-10 text-red-600 bg-red-50 rounded-lg m-4">
+        <Frown size={36} />
+        <span className="mt-2 font-medium">{error}</span>
+        <span className="text-sm text-red-500">Пожалуйста, проверьте консоль сервера и API.</span>
+      </div>
+    );
+  }
+  
+  if (defects.length === 0) {
+      return (
+          <div className="flex flex-col justify-center items-center p-10 text-gray-500">
+              <span className="text-xl font-medium">Нет активных дефектов.</span>
+              <span className="text-sm mt-1">Начните, добавив новый дефект через кнопку "New Defect" вверху.</span>
+          </div>
+      );
+  }
 
   const displayData = limit ? defects.slice(0, limit) : defects;
 
@@ -17,10 +70,11 @@ export default function DefectsTable({ limit }) {
   };
 
   const getPriorityStyle = (priority) => {
-      switch(priority) {
-          case 'High': return 'bg-red-100 text-red-700';
-          case 'Medium': return 'bg-orange-100 text-orange-700';
-          case 'Low': return 'bg-green-100 text-green-700';
+      const p = priority ? priority.toLowerCase() : 'low'; 
+      switch(p) {
+          case 'high': return 'bg-red-100 text-red-700';
+          case 'medium': return 'bg-orange-100 text-orange-700';
+          case 'low': return 'bg-green-100 text-green-700';
           default: return 'bg-gray-100';
       }
   };
@@ -42,9 +96,9 @@ export default function DefectsTable({ limit }) {
       <tbody>
         {displayData.map((defect) => (
           <tr key={defect.id} className="bg-white border-b border-gray-50 hover:bg-gray-50 transition-colors">
-            <td className="px-6 py-4 font-medium text-gray-900">{defect.id}</td>
+            <td className="px-6 py-4 font-medium text-gray-900">{`DT-${defect.id}`}</td>
             <td className="px-6 py-4 text-gray-900 font-medium">{defect.title}</td>
-            <td className="px-6 py-4">{defect.project}</td>
+            <td className="px-6 py-4">{defect.project_name || 'N/A'}</td>
             <td className="px-6 py-4">
                 <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getPriorityStyle(defect.priority)}`}>
                     {defect.priority}
@@ -52,11 +106,11 @@ export default function DefectsTable({ limit }) {
             </td>
             <td className="px-6 py-4 flex items-center gap-2">
                 <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">
-                    {defect.assignee.charAt(0)}
+                    {defect.assigned_to ? defect.assigned_to.charAt(0) : 'U'}
                 </div>
-                {defect.assignee}
+                {defect.assigned_to || 'Unassigned'}
             </td>
-            <td className="px-6 py-4">{defect.date}</td>
+            <td className="px-6 py-4">{defect.due_date ? new Date(defect.due_date).toLocaleDateString() : 'N/A'}</td>
             <td className="px-6 py-4">
                 <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusStyle(defect.status)}`}>
                     {defect.status}
