@@ -1,13 +1,21 @@
 import React from 'react';
 import { LayoutDashboard, FolderKanban, Bug, FileBarChart, LogOut } from 'lucide-react';
+import { useAuth } from '../context/authcontex'; 
 
 export default function Sidebar({ activeTab, setActiveTab }) {
+  const { user, logout } = useAuth(); 
+
   const menuItems = [
     { id: 'dashboard', label: 'Доска', icon: LayoutDashboard },
     { id: 'projects', label: 'Проекты', icon: FolderKanban },
     { id: 'defects', label: 'Дефекты', icon: Bug },
     { id: 'reports', label: 'Отчеты', icon: FileBarChart },
   ];
+
+  const getUserInitials = () => {
+    if (!user || !user.username) return 'Г';
+    return user.username.split(' ').map(name => name[0]).join('').toUpperCase();
+  };
 
   return (
     <div className="w-64 bg-white h-screen border-r border-gray-200 flex flex-col flex-shrink-0">
@@ -38,13 +46,23 @@ export default function Sidebar({ activeTab, setActiveTab }) {
       <div className="p-4 border-t border-gray-200 space-y-1">
         <div className="mt-4 flex items-center gap-3 px-4 py-3">
           <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-xs font-bold">
-              АМ
+            {getUserInitials()}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-gray-900 truncate">Анастасия Маляр</p>
-            <p className="text-xs text-gray-500 truncate">Главный инженер</p>
+            <p className="text-sm font-medium text-gray-900 truncate">
+              {user ? user.username : 'Гость'}
+            </p>
+            <p className="text-xs text-gray-500 truncate">
+              {user ? 'Пользователь' : 'Войдите в систему'}
+            </p>
           </div>
-          <LogOut size={16} className="text-gray-400 cursor-pointer hover:text-red-500"/>
+          <button 
+            onClick={logout}
+            className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+            title="Выйти"
+          >
+            <LogOut size={16} />
+          </button>
         </div>
       </div>
     </div>
