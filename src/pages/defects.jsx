@@ -2,7 +2,7 @@ import React from 'react';
 import { Download } from 'lucide-react';
 import DefectsTable from '../components/defectstable';
 
-export default function Defects() {
+export default function Defects({ onEdit }) {
   return (
     <div className="space-y-6">
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-wrap gap-4 items-center justify-between">
@@ -20,12 +20,12 @@ export default function Defects() {
         </div>
         <button className="flex items-center gap-2 text-gray-600 bg-white border border-gray-300 hover:bg-gray-50 font-medium rounded-lg text-sm px-4 py-2">
             <Download size={16} />
-            Экспорт
+            Export
         </button>
       </div>
-      
+
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <DefectsTable />
+        <DefectsTable onEdit={onEdit} />
       </div>
     </div>
   );
