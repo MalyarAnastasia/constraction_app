@@ -1,0 +1,825 @@
+openapi: 3.0.0
+info:
+  title: Defect Management System API
+  description: API для системы управления дефектами
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@defectmgmt.com
+
+servers:
+  - url: http://localhost:5000
+    description: Development server
+  - url: https://api.defectmgmt.com
+    description: Production server
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        username:
+          type: string
+          example: "john_doe"
+        email:
+          type: string
+          example: "john@example.com"
+        full_name:
+          type: string
+          example: "John Doe"
+        role_id:
+          type: integer
+          example: 3
+        created_at:
+          type: string
+          format: date-time
+    
+    Project:
+      type: object
+      properties:
+        project_id:
+          type: integer
+          example: 1
+        project_name:
+          type: string
+          example: "Website Redesign"
+        description:
+          type: string
+          example: "Complete website redesign project"
+        start_date:
+          type: string
+          format: date
+          example: "2024-01-15"
+        end_date:
+          type: string
+          format: date
+          example: "2024-06-15"
+        manager_id:
+          type: integer
+          example: 1
+        stage_id:
+          type: integer
+          example: 2
+        created_at:
+          type: string
+          format: date-time
+    
+    Defect:
+      type: object
+      properties:
+        defect_id:
+          type: integer
+          example: 1
+        title:
+          type: string
+          example: "Login button not working"
+        description:
+          type: string
+          example: "The login button on homepage doesn't respond to clicks"
+        priority:
+          type: string
+          enum: [Critical, High, Medium, Low]
+          example: "High"
+        status_id:
+          type: integer
+          example: 1
+        assignee_id:
+          type: integer
+          example: 2
+        reporter_id:
+          type: integer
+          example: 1
+        project_id:
+          type: integer
+          example: 1
+        due_date:
+          type: string
+          format: date
+          example: "2024-02-01"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    
+    LoginRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          example: "john_doe"
+        password:
+          type: string
+          example: "password123"
+    
+    RegisterRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          example: "john_doe"
+        password:
+          type: string
+          example: "password123"
+        email:
+          type: string
+          example: "john@example.com"
+        full_name:
+          type: string
+          example: "John Doe"
+
+paths:
+  /api/auth/register:
+    post:
+      summary: Register new user
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Пользователь успешно создан"
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      username:
+                        type: string
+                      role_id:
+                        type: integer
+        '409':
+          description: User already exists
+        '400':
+          description: Missing required fields
+
+  /api/auth/login:
+    post:
+      summary: User login
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Successful login
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Вход выполнен успешно"
+                  token:
+                    type: string
+                    example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      username:
+                        type: string
+                      role:
+                        type: integer
+        '401':
+          description: Invalid credentials
+
+  /api/users:
+    get:
+      summary: Get all users
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Users list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    username:
+                      type: string
+                    email:
+                      type: string
+
+  /api/project-stages:
+    get:
+      summary: Get all project stages
+      tags: [Projects]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Project stages list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    stage_id:
+                      type: integer
+                    stage_name:
+                      type: string
+                    project_id:
+                      type: integer
+
+  /api/projects:
+    get:
+      summary: Get all projects
+      tags: [Projects]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Projects list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Project'
+    
+    post:
+      summary: Create new project
+      tags: [Projects]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                start_date:
+                  type: string
+                  format: date
+                end_date:
+                  type: string
+                  format: date
+      responses:
+        '201':
+          description: Project created successfully
+        '400':
+          description: Missing required fields
+
+  /api/projects/{id}:
+    get:
+      summary: Get project by ID
+      tags: [Projects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Project details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '404':
+          description: Project not found
+    
+    put:
+      summary: Update project
+      tags: [Projects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                start_date:
+                  type: string
+                  format: date
+                end_date:
+                  type: string
+                  format: date
+                stage_id:
+                  type: integer
+      responses:
+        '200':
+          description: Project updated successfully
+        '404':
+          description: Project not found
+    
+    delete:
+      summary: Delete project
+      tags: [Projects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Project deleted successfully
+        '404':
+          description: Project not found
+
+  /api/projects/{id}/stage:
+    put:
+      summary: Update project stage
+      tags: [Projects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - stage_id
+              properties:
+                stage_id:
+                  type: integer
+      responses:
+        '200':
+          description: Project stage updated successfully
+        '404':
+          description: Project not found
+
+  /api/projects/{id}/defects:
+    get:
+      summary: Get project defects
+      tags: [Projects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Project defects list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Defect'
+
+  /api/defects:
+    get:
+      summary: Get defects with filters
+      tags: [Defects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status_id
+          in: query
+          schema:
+            type: integer
+        - name: assignee_id
+          in: query
+          schema:
+            type: integer
+        - name: project_id
+          in: query
+          schema:
+            type: integer
+        - name: priority
+          in: query
+          schema:
+            type: string
+        - name: reporter_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Defects list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Defect'
+    
+    post:
+      summary: Create new defect
+      tags: [Defects]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - priority
+                - project_id
+              properties:
+                title:
+                  type: string
+                description:
+                  type: string
+                priority:
+                  type: string
+                project_id:
+                  type: integer
+                status_id:
+                  type: integer
+                assignee_id:
+                  type: integer
+                due_date:
+                  type: string
+                  format: date
+      responses:
+        '201':
+          description: Defect created successfully
+
+  /api/defects/{id}:
+    get:
+      summary: Get defect by ID with details
+      tags: [Defects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Defect details with history and comments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  defect:
+                    $ref: '#/components/schemas/Defect'
+                  history:
+                    type: array
+                  comments:
+                    type: array
+                  attachments:
+                    type: array
+        '404':
+          description: Defect not found
+    
+    put:
+      summary: Update defect
+      tags: [Defects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                description:
+                  type: string
+                priority:
+                  type: string
+                status_id:
+                  type: integer
+                assignee_id:
+                  type: integer
+                due_date:
+                  type: string
+                  format: date
+                project_id:
+                  type: integer
+      responses:
+        '200':
+          description: Defect updated successfully
+    
+    delete:
+      summary: Delete defect
+      tags: [Defects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Defect deleted successfully
+
+  /api/defects/{id}/comments:
+    post:
+      summary: Add comment to defect
+      tags: [Comments]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - comment_text
+              properties:
+                comment_text:
+                  type: string
+      responses:
+        '201':
+          description: Comment added successfully
+
+  /api/defects/{id}/attachments:
+    post:
+      summary: Add attachment to defect
+      tags: [Attachments]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - file_name
+                - file_path
+              properties:
+                file_name:
+                  type: string
+                file_path:
+                  type: string
+                file_size:
+                  type: integer
+                mime_type:
+                  type: string
+      responses:
+        '201':
+          description: Attachment added successfully
+
+  /api/attachments/{id}:
+    delete:
+      summary: Delete attachment
+      tags: [Attachments]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Attachment deleted successfully
+        '404':
+          description: Attachment not found
+
+  /api/defect-statuses:
+    get:
+      summary: Get all defect statuses
+      tags: [Defects]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Defect statuses list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    status_id:
+                      type: integer
+                    status_name:
+                      type: string
+
+  /api/export/defects:
+    get:
+      summary: Export defects to CSV
+      tags: [Export]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: CSV file with defects data
+          content:
+            text/csv:
+              schema:
+                type: string
+        '404':
+          description: No data to export
+
+  /api/reports/defects-stats:
+    get:
+      summary: Get defects statistics
+      tags: [Reports]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: timeRange
+          in: query
+          schema:
+            type: string
+            enum: [week, month, quarter, year]
+            default: month
+        - name: project_id
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Statistics data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalDefects:
+                    type: integer
+                  openDefects:
+                    type: integer
+                  resolvedDefects:
+                    type: integer
+                  avgResolutionTime:
+                    type: number
+                  defectsByStatus:
+                    type: array
+                  defectsByPriority:
+                    type: array
+                  defectsByProject:
+                    type: array
+                  defectsTrend:
+                    type: array
+                  assigneeEfficiency:
+                    type: array
+                  resolutionTimeByPriority:
+                    type: array
+
+  /api/dashboard/stats:
+    get:
+      summary: Get dashboard statistics
+      tags: [Dashboard]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: timeRange
+          in: query
+          schema:
+            type: string
+            enum: [week, month, quarter, year]
+            default: week
+      responses:
+        '200':
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalDefects:
+                    type: integer
+                  openDefects:
+                    type: integer
+                  resolvedDefects:
+                    type: integer
+                  avgResolutionTime:
+                    type: number
+                  defectsByStatus:
+                    type: array
+                  defectsByPriority:
+                    type: array
+                  defectsByProject:
+                    type: array
+                  defectsTrend:
+                    type: array
+
+  /api/dashboard/recent-defects:
+    get:
+      summary: Get recent defects
+      tags: [Dashboard]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: timeRange
+          in: query
+          schema:
+            type: string
+            enum: [week, month, quarter, year]
+            default: week
+      responses:
+        '200':
+          description: Recent defects list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    defect_id:
+                      type: integer
+                    title:
+                      type: string
+                    priority:
+                      type: string
+                    status_name:
+                      type: string
+                    created_at:
+                      type: string
+                      format: date-time
