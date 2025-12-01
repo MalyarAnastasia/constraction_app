@@ -423,7 +423,7 @@ app.get('/api/defects/:id', authMiddleware, async (req, res) => {
     }
 });
 
-app.put('/api/defects/:id', authMiddleware, roleMiddleware([1, 2]), async (req, res) => {
+app.put('/api/defects/:id', authMiddleware, roleMiddleware(1), async (req, res) => {
     const client = await pool.connect();
     try {
         const defectId = req.params.id;
@@ -530,7 +530,7 @@ app.put('/api/defects/:id', authMiddleware, roleMiddleware([1, 2]), async (req, 
 });
 
 
-app.delete('/api/defects/:id', authMiddleware, roleMiddleware([1, 2]), async (req, res) => {
+app.delete('/api/defects/:id', authMiddleware, roleMiddleware(1), async (req, res) => {
     try {
         const defectId = req.params.id;
         const query = `DELETE FROM defects WHERE defect_id = $1`; 
@@ -1205,6 +1205,85 @@ app.get('/api/dashboard/recent-defects', authMiddleware, async (req, res) => {
     } catch (err) {
         console.error('Error fetching recent defects:', err);
         res.status(500).json({ message: 'Ошибка при получении последних дефектов' });
+    }
+});
+
+const DatabaseBackup = require('./backup');
+const backupManager = new DatabaseBackup();
+
+app.post('/api/admin/backup', authMiddleware, roleMiddleware([1]), async (req, res) => {
+    try {
+        const backupFile = await backupManager.createBackup();
+        
+        res.json({
+            message: 'Резервная копия создана успешно',
+            backupFile: path.basename(backupFile),
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Ошибка создания бэкапа:', error);
+        res.status(500).json({ message: 'Ошибка создания резервной копии' });
+    }
+});
+
+app.get('/api/admin/backups', authMiddleware, roleMiddleware([1]), async (req, res) => {
+    try {
+        const files = fs.readdirSync(backupManager.backupDir)
+            .filter(file => file.endsWith('.sql'))
+            .map(file => {
+                const filePath = path.join(backupManager.backupDir, file);
+                const stats = fs.statSync(filePath);
+                return {
+                    filename: file,
+                    size: stats.size,
+                    created: stats.mtime,
+                    readableSize: (stats.size / 1024 / 1024).toFixed(2) + ' MB'
+                };
+            })
+            .sort((a, b) => new Date(b.created) - new Date(a.created));
+
+        res.json(files);
+    } catch (error) {
+        console.error('Ошибка получения списка бэкапов:', error);
+        res.status(500).json({ message: 'Ошибка получения списка бэкапов' });
+    }
+});
+
+app.get('/api/admin/backups/:filename', authMiddleware, roleMiddleware([1]), async (req, res) => {
+    try {
+        const filename = req.params.filename;
+        const filePath = path.join(backupManager.backupDir, filename);
+        
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ message: 'Файл бэкапа не найден' });
+        }
+
+        res.setHeader('Content-Type', 'application/sql');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        
+        const fileStream = fs.createReadStream(filePath);
+        fileStream.pipe(res);
+    } catch (error) {
+        console.error('Ошибка скачивания бэкапа:', error);
+        res.status(500).json({ message: 'Ошибка скачивания бэкапа' });
+    }
+});
+
+app.post('/api/admin/restore/:filename', authMiddleware, roleMiddleware([1]), async (req, res) => {
+    try {
+        const filename = req.params.filename;
+        const filePath = path.join(backupManager.backupDir, filename);
+        
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ message: 'Файл бэкапа не найден' });
+        }
+
+        await backupManager.restoreBackup(filePath);
+        
+        res.json({ message: 'База данных успешно восстановлена из резервной копии' });
+    } catch (error) {
+        console.error('Ошибка восстановления:', error);
+        res.status(500).json({ message: 'Ошибка восстановления базы данных' });
     }
 });
 
