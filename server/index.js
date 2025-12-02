@@ -110,24 +110,55 @@ app.post('/api/projects', authMiddleware, roleMiddleware([1, 2]), async (req, re
         const manager_id = req.user.id; 
 
         if (!name || name.trim().length === 0) {
-             return res.status(400).json({ message: 'Введите название проекта' });
+            return res.status(400).json({ message: 'Введите название проекта' });
         }
-        
+
+        if (start_date && end_date) {
+            const startDate = new Date(start_date);
+            const endDate = new Date(end_date);
+            
+            if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+                return res.status(400).json({ 
+                    message: 'Неверный формат даты. Используйте формат YYYY-MM-DD' 
+                });
+            }
+            
+            if (startDate > endDate) {
+                return res.status(400).json({ 
+                    message: 'Дата начала проекта не может быть позже даты завершения' 
+                });
+            }
+        } else if (start_date && !end_date) {
+            const startDate = new Date(start_date);
+            if (isNaN(startDate.getTime())) {
+                return res.status(400).json({ 
+                    message: 'Неверный формат даты начала' 
+                });
+            }
+        } else if (!start_date && end_date) {
+            const endDate = new Date(end_date);
+            if (isNaN(endDate.getTime())) {
+                return res.status(400).json({ 
+                    message: 'Неверный формат даты завершения' 
+                });
+            }
+        }
+
         const query = `
-             INSERT INTO projects (
-                 project_name,
-                 description,
-                 start_date,
-                 end_date,
-                 manager_id,
-                 created_at
-             ) 
-             VALUES ($1, $2, $3, $4, $5, NOW())
-             RETURNING *`;
+            INSERT INTO projects (
+                project_name,
+                description,
+                start_date,
+                end_date,
+                manager_id,
+                created_at
+            ) 
+            VALUES ($1, $2, $3, $4, $5, NOW())
+            RETURNING *`;
 
         const values = [
-            name,                               
-            description || null,                
+            name.trim(),                         
+            description ? description.trim() : null,                
             start_date || null,                 
             end_date || null,                   
             manager_id                          
