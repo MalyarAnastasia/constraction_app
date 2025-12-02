@@ -11,6 +11,7 @@ export default function DefectDetailModal({ isOpen, onClose, defectId }) {
     const [newComment, setNewComment] = useState('');
     const [commentLoading, setCommentLoading] = useState(false);
     const [fileUploading, setFileUploading] = useState(false);
+    const [isDragOver, setIsDragOver] = useState(false);
 
     const fetchDefectData = useCallback(async () => {
         try {
@@ -64,7 +65,6 @@ export default function DefectDetailModal({ isOpen, onClose, defectId }) {
             }
 
             const result = await response.json();
-            console.log('Комментарий добавлен:', result);
             
             setNewComment('');
 
@@ -81,55 +81,100 @@ export default function DefectDetailModal({ isOpen, onClose, defectId }) {
         }
     };
 
-    const handleFileUpload = async (e) => {
-        const file = e.target.files[0];
+    const handleFileUpload = async (fileInput) => {
+        const file = fileInput.target ? fileInput.target.files[0] : fileInput;
         if (!file) return;
 
+        const maxSize = 10 * 1024 * 1024;
+        if (file.size > maxSize) {
+            setError('Файл слишком большой. Максимальный размер: 10MB');
+            if (fileInput.target) fileInput.target.value = '';
+            return;
+        }
+
+        const allowedTypes = [
+            'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'text/plain', 'text/csv',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        ];
+        
+        if (!allowedTypes.includes(file.type)) {
+            setError('Неподдерживаемый тип файла. Разрешены: изображения, PDF, документы, таблицы');
+            if (fileInput.target) fileInput.target.value = '';
+            return;
+        }
+
         setFileUploading(true);
+        setError('');
+        
         try {
-            const fakeFilePath = `/uploads/${Date.now()}_${file.name}`;
-            
-            console.log('Отправка файла:', {
-                file_name: file.name,
-                file_path: fakeFilePath,
-                file_size: file.size,
-                mime_type: file.type
-            });
+            const formData = new FormData();
+            formData.append('file', file);
             
             const response = await fetch(`/api/defects/${defectId}/attachments`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`,
                 },
-                body: JSON.stringify({
-                    file_name: file.name,
-                    file_path: fakeFilePath,
-                    file_size: file.size,
-                    mime_type: file.type
-                })
+                body: formData
             });
 
+            const data = await response.json();
+            
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Не удалось загрузить файл');
+                throw new Error(data.message || data.error || 'Не удалось загрузить файл');
             }
 
-            const result = await response.json();
-            console.log('Файл загружен:', result);
-            
             setDefectData(prev => ({
                 ...prev,
-                attachments: [result.attachment, ...(prev.attachments || [])]
+                attachments: [data.attachment, ...(prev.attachments || [])]
             }));
 
-            e.target.value = ''; 
+            if (fileInput.target) fileInput.target.value = '';
 
         } catch (err) {
             console.error('Ошибка загрузки файла:', err);
             setError('Ошибка загрузки файла: ' + err.message);
+            
+            if (err.message.includes('413')) {
+                setError('Файл слишком большой. Максимальный размер: 10MB');
+            } else if (err.message.includes('415')) {
+                setError('Неподдерживаемый тип файла');
+            }
         } finally {
             setFileUploading(false);
+        }
+    };
+
+    const downloadAttachment = async (attachmentId, fileName) => {
+        try {
+            const response = await fetch(`/api/attachments/${attachmentId}/download`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Не удалось скачать файл');
+            }
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+
+        } catch (err) {
+            console.error('Ошибка скачивания файла:', err);
+            setError('Не удалось скачать файл: ' + err.message);
         }
     };
 
@@ -156,6 +201,30 @@ export default function DefectDetailModal({ isOpen, onClose, defectId }) {
         } catch (err) {
             console.error('Ошибка удаления вложения:', err);
             setError(err.message);
+        }
+    };
+
+    const handleDragOver = (e) => {
+        e.preventDefault();
+        setIsDragOver(true);
+    };
+
+    const handleDragLeave = () => {
+        setIsDragOver(false);
+    };
+
+    const handleDrop = (e) => {
+        e.preventDefault();
+        setIsDragOver(false);
+        
+        const file = e.dataTransfer.files[0];
+        if (file) {
+            const event = {
+                target: {
+                    files: [file]
+                }
+            };
+            handleFileUpload(event);
         }
     };
 
@@ -206,7 +275,6 @@ export default function DefectDetailModal({ isOpen, onClose, defectId }) {
         <div className="fixed inset-0 bg-gray-900 bg-opacity-70 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
                 
-                {/* Header */}
                 <div className="flex justify-between items-center p-6 border-b border-gray-200 bg-white sticky top-0 z-10">
                     <div>
                         <h2 className="text-2xl font-bold text-gray-900">{defect.title}</h2>
@@ -219,7 +287,6 @@ export default function DefectDetailModal({ isOpen, onClose, defectId }) {
                     </button>
                 </div>
 
-                {/* Tabs */}
                 <div className="border-b border-gray-200 bg-gray-50">
                     <nav className="flex -mb-px">
                         {[
@@ -247,7 +314,6 @@ export default function DefectDetailModal({ isOpen, onClose, defectId }) {
                     </nav>
                 </div>
 
-                {/* Content */}
                 <div className="flex-1 overflow-y-auto p-6">
                     {error && (
                         <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-lg border border-red-100">
@@ -255,7 +321,6 @@ export default function DefectDetailModal({ isOpen, onClose, defectId }) {
                         </div>
                     )}
 
-                    {/* Детали дефекта */}
                     {activeTab === 'details' && (
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <div className="space-y-4">
@@ -324,7 +389,6 @@ export default function DefectDetailModal({ isOpen, onClose, defectId }) {
                         </div>
                     )}
 
-                    {/* История изменений */}
                     {activeTab === 'history' && (
                         <div className="space-y-4">
                             {history && history.length > 0 ? (
@@ -350,10 +414,8 @@ export default function DefectDetailModal({ isOpen, onClose, defectId }) {
                         </div>
                     )}
 
-                    {/* Комментарии */}
                     {activeTab === 'comments' && (
                         <div className="space-y-6">
-                            {/* Форма добавления комментария */}
                             <form onSubmit={handleAddComment} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                                 <textarea
                                     value={newComment}
@@ -379,7 +441,6 @@ export default function DefectDetailModal({ isOpen, onClose, defectId }) {
                                 </div>
                             </form>
 
-                            {/* Список комментариев */}
                             <div className="space-y-4">
                                 {comments && comments.length > 0 ? (
                                     comments.map(comment => (
@@ -398,11 +459,14 @@ export default function DefectDetailModal({ isOpen, onClose, defectId }) {
                         </div>
                     )}
 
-                    {/* Вложения */}
                     {activeTab === 'attachments' && (
                         <div className="space-y-4">
-                            {/* Форма загрузки файла */}
-                            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                            <div 
+                                className={`bg-gray-50 p-4 rounded-lg border-2 ${isDragOver ? 'border-blue-500 border-dashed bg-blue-50' : 'border-gray-200'}`}
+                                onDragOver={handleDragOver}
+                                onDragLeave={handleDragLeave}
+                                onDrop={handleDrop}
+                            >
                                 <label className="block text-sm font-medium text-gray-700 mb-2">
                                     Загрузить файл
                                 </label>
@@ -412,6 +476,7 @@ export default function DefectDetailModal({ isOpen, onClose, defectId }) {
                                         onChange={handleFileUpload}
                                         disabled={fileUploading}
                                         className="flex-1 text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                                        id="file-upload"
                                     />
                                     {fileUploading && (
                                         <div className="flex items-center gap-2 text-blue-600">
@@ -420,9 +485,11 @@ export default function DefectDetailModal({ isOpen, onClose, defectId }) {
                                         </div>
                                     )}
                                 </div>
+                                <p className="text-xs text-gray-500 mt-2">
+                                    Перетащите файл сюда или нажмите "Выбрать файл". Максимальный размер: 10MB
+                                </p>
                             </div>
 
-                            {/* Список вложений */}
                             <div className="space-y-3">
                                 {attachments && attachments.length > 0 ? (
                                     attachments.map(attachment => (
@@ -439,7 +506,7 @@ export default function DefectDetailModal({ isOpen, onClose, defectId }) {
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <button
-                                                    onClick={() => window.open(attachment.file_path, '_blank')}
+                                                    onClick={() => downloadAttachment(attachment.attachment_id, attachment.file_name)}
                                                     className="p-1 text-gray-400 hover:text-blue-600"
                                                     title="Скачать"
                                                 >

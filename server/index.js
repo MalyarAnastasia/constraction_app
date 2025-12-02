@@ -4,6 +4,10 @@ const cors = require('cors');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
 
 const app = express();
 app.use(cors()); 
@@ -816,62 +820,298 @@ app.post('/api/defects/:id/comments', authMiddleware, async (req, res) => {
     }
 });
 
-app.post('/api/defects/:id/attachments', authMiddleware, async (req, res) => {
-    const client = await pool.connect();
-    try {
-        const defectId = req.params.id;
-        const { file_name, file_path, file_size, mime_type } = req.body;
-        const userId = req.user.id;
 
-        console.log('Добавление вложения:', { defectId, file_name, file_path, userId });
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+    console.log('Создана папка uploads:', uploadDir);
+}
 
-        if (!file_name || !file_path) {
-            return res.status(400).json({ message: 'Имя файла и путь обязательны' });
-        }
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, uploadDir);
+    },
+    filename: function (req, file, cb) {
+        const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const uniqueName = Date.now() + '_' + safeName;
+        cb(null, uniqueName);
+    }
+});
 
-        const defectCheck = await client.query('SELECT * FROM defects WHERE defect_id = $1', [defectId]);
-        if (defectCheck.rows.length === 0) {
-            return res.status(404).json({ message: 'Дефект не найден' });
-        }
-
-        const query = `
-            INSERT INTO attachments (defect_id, file_name, file_path, file_size, mime_type, uploaded_by, uploaded_at)
-            VALUES ($1, $2, $3, $4, $5, $6, NOW())
-            RETURNING *
-        `;
-        const values = [
-            defectId, 
-            file_name, 
-            file_path, 
-            file_size || null, 
-            mime_type || 'application/octet-stream', 
-            userId
+const upload = multer({
+    storage: storage,
+    limits: {
+        fileSize: 10 * 1024 * 1024, 
+        files: 5
+    },
+    fileFilter: function (req, file, cb) {
+        const allowedMimes = [
+            'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+            'application/pdf', 
+            'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'text/plain', 'text/csv', 'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         ];
         
-        console.log('Выполняем запрос:', query, values);
-        
-        const newAttachment = await client.query(query, values);
-        
-        const attachmentWithUser = await client.query(`
-            SELECT a.*, u.username as uploaded_by_name 
-            FROM attachments a 
-            LEFT JOIN users u ON a.uploaded_by = u.id 
-            WHERE a.attachment_id = $1
-        `, [newAttachment.rows[0].attachment_id]);
-        
-        console.log('Вложение успешно добавлено:', attachmentWithUser.rows[0]);
-        
-        res.status(201).json({
-            message: 'Файл успешно загружен',
-            attachment: attachmentWithUser.rows[0]
-        });
+        if (allowedMimes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Неподдерживаемый тип файла'), false);
+        }
+    }
+});
 
+app.post('/api/defects/:id/attachments', 
+    authMiddleware, 
+    upload.single('file'), 
+    async (req, res) => {
+        const client = await pool.connect();
+        
+        try {
+            const defectId = req.params.id;
+            const userId = req.user.id;
+
+            console.log('=== НАЧАЛО ЗАГРУЗКИ ФАЙЛА ===');
+            console.log('Defect ID:', defectId);
+            console.log('User ID:', userId);
+            console.log('Uploaded file:', req.file);
+            console.log('Request body:', req.body);
+
+            if (!req.file) {
+                return res.status(400).json({ 
+                    message: 'Файл не был загружен. Убедитесь, что отправляете файл через поле "file"' 
+                });
+            }
+
+            const defectCheck = await client.query(
+                'SELECT * FROM defects WHERE defect_id = $1', 
+                [defectId]
+            );
+            
+            if (defectCheck.rows.length === 0) {
+                fs.unlinkSync(req.file.path);
+                return res.status(404).json({ message: 'Дефект не найден' });
+            }
+
+            const file_name = req.body.custom_name || req.file.originalname;
+            const file_path = `/uploads/${req.file.filename}`;
+            const file_size = req.file.size;
+            const mime_type = req.file.mimetype;
+
+            console.log('Данные для сохранения:', {
+                file_name,
+                file_path,
+                file_size,
+                mime_type
+            });
+
+            const query = `
+                INSERT INTO attachments (
+                    defect_id, 
+                    file_name, 
+                    file_path, 
+                    file_size, 
+                    mime_type, 
+                    uploaded_by, 
+                    uploaded_at
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, NOW())
+                RETURNING *
+            `;
+            
+            const values = [
+                defectId, 
+                file_name, 
+                file_path, 
+                file_size, 
+                mime_type, 
+                userId
+            ];
+            
+            console.log('Выполняем SQL запрос с значениями:', values);
+            
+            const newAttachment = await client.query(query, values);
+
+            const attachmentWithUser = await client.query(`
+                SELECT a.*, u.username as uploaded_by_name 
+                FROM attachments a 
+                LEFT JOIN users u ON a.uploaded_by = u.id 
+                WHERE a.attachment_id = $1
+            `, [newAttachment.rows[0].attachment_id]);
+            
+            console.log('Вложение успешно добавлено в БД:', attachmentWithUser.rows[0]);
+            
+            res.status(201).json({
+                message: 'Файл успешно загружен и сохранен',
+                attachment: attachmentWithUser.rows[0],
+                fileInfo: {
+                    savedTo: req.file.path,
+                    size: file_size,
+                    mimeType: mime_type
+                }
+            });
+
+        } catch (err) {
+            console.error('Ошибка при загрузке файла:', err);
+
+            if (req.file && fs.existsSync(req.file.path)) {
+                try {
+                    fs.unlinkSync(req.file.path);
+                    console.log('Файл удален из-за ошибки:', req.file.path);
+                } catch (unlinkErr) {
+                    console.error('Ошибка при удалении файла:', unlinkErr);
+                }
+            }
+
+            let statusCode = 500;
+            let errorMessage = 'Ошибка при загрузке файла: ' + err.message;
+            
+            if (err instanceof multer.MulterError) {
+                statusCode = 400;
+                if (err.code === 'LIMIT_FILE_SIZE') {
+                    errorMessage = 'Файл слишком большой. Максимальный размер: 10MB';
+                } else if (err.code === 'LIMIT_FILE_COUNT') {
+                    errorMessage = 'Слишком много файлов. Максимум: 5 файлов';
+                }
+            }
+            
+            res.status(statusCode).json({ 
+                message: errorMessage,
+                error: err.message 
+            });
+        } finally {
+            client.release();
+        }
+    }
+);
+
+
+app.post('/api/defects/:id/attachments/multiple',
+    authMiddleware,
+    upload.array('files', 5), 
+    async (req, res) => {
+        const client = await pool.connect();
+        
+        try {
+            const defectId = req.params.id;
+            const userId = req.user.id;
+            const files = req.files;
+
+            if (!files || files.length === 0) {
+                return res.status(400).json({ 
+                    message: 'Файлы не были загружены' 
+                });
+            }
+
+            const defectCheck = await client.query(
+                'SELECT * FROM defects WHERE defect_id = $1', 
+                [defectId]
+            );
+            
+            if (defectCheck.rows.length === 0) {
+                files.forEach(file => {
+                    if (fs.existsSync(file.path)) {
+                        fs.unlinkSync(file.path);
+                    }
+                });
+                return res.status(404).json({ message: 'Дефект не найден' });
+            }
+
+            const attachments = [];
+            
+            for (const file of files) {
+                const file_name = file.originalname;
+                const file_path = `/uploads/${file.filename}`;
+                const file_size = file.size;
+                const mime_type = file.mimetype;
+
+                const query = `
+                    INSERT INTO attachments (
+                        defect_id, file_name, file_path, file_size, 
+                        mime_type, uploaded_by, uploaded_at
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, NOW())
+                    RETURNING *
+                `;
+                
+                const result = await client.query(query, [
+                    defectId, file_name, file_path, file_size, mime_type, userId
+                ]);
+                
+                attachments.push(result.rows[0]);
+            }
+
+            res.status(201).json({
+                message: `Успешно загружено ${attachments.length} файлов`,
+                attachments: attachments
+            });
+
+        } catch (err) {
+            console.error('Ошибка при множественной загрузке:', err);
+
+            if (req.files) {
+                req.files.forEach(file => {
+                    if (fs.existsSync(file.path)) {
+                        try {
+                            fs.unlinkSync(file.path);
+                        } catch (unlinkErr) {
+                            console.error('Ошибка при удалении файла:', unlinkErr);
+                        }
+                    }
+                });
+            }
+            
+            res.status(500).json({ 
+                message: 'Ошибка при загрузке файлов: ' + err.message 
+            });
+        } finally {
+            client.release();
+        }
+    }
+);
+
+app.get('/api/attachments/:id/download', async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const result = await pool.query(
+            `SELECT file_path, file_name, mime_type 
+             FROM attachments 
+             WHERE attachment_id = $1`,
+            [id]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: 'Файл не найден' });
+        }
+        
+        const { file_path, file_name, mime_type } = result.rows[0];
+        
+        const absolutePath = path.join(__dirname, file_path);
+        
+        if (!fs.existsSync(absolutePath)) {
+            return res.status(404).json({ 
+                message: 'Файл не найден на сервере',
+                path: absolutePath
+            });
+        }
+
+        res.setHeader('Content-Type', mime_type);
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(file_name)}"`);
+        
+        const fileStream = fs.createReadStream(absolutePath);
+        fileStream.pipe(res);
+        
+        fileStream.on('error', (err) => {
+            console.error('Ошибка при чтении файла:', err);
+            res.status(500).json({ message: 'Ошибка при чтении файла' });
+        });
+        
     } catch (err) {
-        console.error('Ошибка при загрузке файла:', err);
-        console.error('Детали ошибки:', err.stack);
-        res.status(500).json({ message: 'Ошибка при загрузке файла: ' + err.message });
-    } finally {
-        client.release();
+        console.error('Ошибка при скачивании:', err);
+        res.status(500).json({ 
+            message: 'Ошибка при скачивании файла: ' + err.message 
+        });
     }
 });
 app.delete('/api/attachments/:id', authMiddleware, roleMiddleware([1, 2]), async (req, res) => {
