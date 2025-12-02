@@ -172,7 +172,7 @@ export default function Dashboard({ onEdit, onView }) {
                     </div>
                     
                     <div className="space-y-4">
-                        {recentDefects.slice(0, 8).map((defect) => (
+                        {recentDefects.slice(0, 4).map((defect) => (
                             <div 
                                 key={defect.defect_id}
                                 className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-all duration-200 hover:shadow-md"

@@ -594,19 +594,10 @@ app.get('/api/export/defects', authMiddleware, roleMiddleware([1, 2]), async (re
 
 app.get('/api/defects', authMiddleware, async (req, res) => { 
     try {
-        let query = `
-            SELECT d.*, 
-                   ds.status_name,
-                   p.project_name,
-                   u_reporter.username as reporter_name,
-                   u_assignee.username as assignee_name
-            FROM defects d
-            LEFT JOIN defect_statuses ds ON d.status_id = ds.status_id
-            LEFT JOIN projects p ON d.project_id = p.project_id
-            LEFT JOIN users u_reporter ON d.reporter_id = u_reporter.id
-            LEFT JOIN users u_assignee ON d.assignee_id = u_assignee.id
-        `;
-        
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const offset = (page - 1) * limit;
+
         const conditions = [];
         const values = [];
         let paramCount = 0;
@@ -636,15 +627,41 @@ app.get('/api/defects', authMiddleware, async (req, res) => {
             values.push(req.query.reporter_id);
             conditions.push(`d.reporter_id = $${paramCount}`);
         }
-
-        if (conditions.length > 0) {
-            query += ' WHERE ' + conditions.join(' AND ');
-        }
         
-        query += ' ORDER BY d.created_at DESC';
+        const whereClause = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
 
-        const defects = await pool.query(query, values);
-        res.json(defects.rows);
+        const countQuery = `
+            SELECT COUNT(*) AS total_count
+            FROM defects d
+            ${whereClause}
+        `;
+        const totalResult = await pool.query(countQuery, values);
+        const totalCount = parseInt(totalResult.rows[0].total_count);
+
+        const defectsQuery = `
+            SELECT d.*, 
+                    ds.status_name,
+                    p.project_name,
+                    u_reporter.username as reporter_name,
+                    u_assignee.username as assignee_name
+            FROM defects d
+            LEFT JOIN defect_statuses ds ON d.status_id = ds.status_id
+            LEFT JOIN projects p ON d.project_id = p.project_id
+            LEFT JOIN users u_reporter ON d.reporter_id = u_reporter.id
+            LEFT JOIN users u_assignee ON d.assignee_id = u_assignee.id
+            ${whereClause}
+            ORDER BY d.created_at DESC
+            LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
+        `;
+        
+        const defectValues = [...values, limit, offset];
+
+        const defectResults = await pool.query(defectsQuery, defectValues);
+
+        res.json({
+            defects: defectResults.rows,
+            totalCount: totalCount
+        });
 
     } catch (err) {
         console.error('Ошибка получения дефектов:', err);
