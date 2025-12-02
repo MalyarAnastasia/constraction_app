@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Edit2, Trash2, Loader2, Frown, Eye, Download, Filter, X } from 'lucide-react';
 import { useAuth } from '../context/authcontex';
 
-export default function DefectsTable({ onEdit, onView, refreshKey }) {
+export default function DefectsTable({ onEdit, onView, refreshKey, currentPage, pageSize, onTotalCountChange }) {
     const { token } = useAuth();
     const [defects, setDefects] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -20,6 +20,7 @@ export default function DefectsTable({ onEdit, onView, refreshKey }) {
     const [projects, setProjects] = useState([]);
     const [users, setUsers] = useState([]);
     const [statuses, setStatuses] = useState([]);
+    const [totalCount, setTotalCount] = useState(0);
 
     const PRIORITY_OPTIONS = {
         'Low': 'Низкий',
@@ -38,7 +39,12 @@ export default function DefectsTable({ onEdit, onView, refreshKey }) {
             setLoading(true);
             setError(null);
 
-            const queryParams = new URLSearchParams();
+            const queryParams = new URLSearchParams({
+                page: currentPage.toString(),
+                limit: pageSize.toString(),
+                ...filterParams
+            });
+
             Object.entries(filterParams).forEach(([key, value]) => {
                 if (value) queryParams.append(key, value);
             });
@@ -55,16 +61,23 @@ export default function DefectsTable({ onEdit, onView, refreshKey }) {
             }
 
             const data = await response.json();
-            console.log('🔍 Fetched defects RAW:', data); 
-            setDefects(data);
+            
+            if (data.defects !== undefined) {
+                setDefects(data.defects);
+                setTotalCount(data.totalCount || 0);
+                onTotalCountChange(data.totalCount || 0);
+            } else {
+                setDefects(data);
+                setTotalCount(data.length || 0);
+                onTotalCountChange(data.length || 0);
+            }
 
         } catch (err) {
-            console.error("Error fetching defects:", err);
             setError(err.message || 'Не удалось загрузить данные о дефектах.');
         } finally {
             setLoading(false);
         }
-    }, [token]);
+    }, [token, currentPage, pageSize, onTotalCountChange]);
 
     const fetchFilterData = useCallback(async () => {
         if (!token) return;
@@ -78,21 +91,17 @@ export default function DefectsTable({ onEdit, onView, refreshKey }) {
 
             if (projectsRes.ok) {
                 const projectsData = await projectsRes.json();
-                console.log('🔍 Fetched projects:', projectsData);
                 setProjects(projectsData);
             }
             if (usersRes.ok) {
                 const usersData = await usersRes.json();
-                console.log('🔍 Fetched users:', usersData);
                 setUsers(usersData);
             }
             if (statusesRes.ok) {
                 const statusesData = await statusesRes.json();
-                console.log('🔍 Fetched statuses:', statusesData);
                 setStatuses(statusesData);
             }
         } catch (err) {
-            console.error('Error fetching filter data:', err);
         }
     }, [token]);
 
@@ -101,7 +110,7 @@ export default function DefectsTable({ onEdit, onView, refreshKey }) {
             fetchDefects(filters);
             fetchFilterData();
         }
-    }, [token, refreshKey, fetchDefects, fetchFilterData]);
+    }, [token, refreshKey, fetchDefects, fetchFilterData, currentPage, pageSize]);
 
     useEffect(() => {
         if (token) {
@@ -110,7 +119,7 @@ export default function DefectsTable({ onEdit, onView, refreshKey }) {
             }, 300);
             return () => clearTimeout(timeoutId);
         }
-    }, [filters, token, fetchDefects]);
+    }, [filters, token, fetchDefects, currentPage, pageSize]);
 
     const handleDelete = async (defectId) => {
         setDeleteLoading(true);
@@ -128,9 +137,10 @@ export default function DefectsTable({ onEdit, onView, refreshKey }) {
             }
 
             setDefects(defects.filter(d => d.defect_id !== defectId));
+            setTotalCount(prev => prev - 1);
+            onTotalCountChange(totalCount - 1);
             
         } catch (err) {
-            console.error("Error deleting defect:", err);
             setError(err.message || 'Ошибка при удалении дефекта.');
         } finally {
             setDeleteLoading(false);
@@ -175,7 +185,6 @@ export default function DefectsTable({ onEdit, onView, refreshKey }) {
             document.body.removeChild(a);
 
         } catch (err) {
-            console.error('Error exporting defects:', err);
             setError('Ошибка при экспорте данных');
         }
     };
@@ -206,7 +215,6 @@ export default function DefectsTable({ onEdit, onView, refreshKey }) {
     };
 
     const getProjectName = (defect) => {
-        console.log('🔍 Getting project for defect:', defect);
         return defect.project_name || 
                defect.project?.project_name || 
                defect.project_id?.project_name ||
@@ -214,7 +222,6 @@ export default function DefectsTable({ onEdit, onView, refreshKey }) {
     };
 
     const getStatusName = (defect) => {
-        console.log('🔍 Getting status for defect:', defect);
         return defect.status_name || 
                defect.status?.status_name || 
                defect.status_id?.status_name ||
@@ -222,7 +229,6 @@ export default function DefectsTable({ onEdit, onView, refreshKey }) {
     };
 
     const getAssigneeName = (defect) => {
-        console.log('🔍 Getting assignee for defect:', defect);
         return defect.assignee_name || 
                defect.assignee?.username || 
                defect.assigned_to?.username ||
@@ -231,42 +237,11 @@ export default function DefectsTable({ onEdit, onView, refreshKey }) {
     };
 
     const getReporterName = (defect) => {
-        console.log('🔍 Getting reporter for defect:', defect);
         return defect.reporter_name || 
                defect.reporter?.username || 
                defect.created_by?.username ||
                defect.reporter_id?.username ||
                'Не указан';
-    };
-
-    const logDefectData = (defect) => {
-        console.log('📊 Defect data structure:', {
-            id: defect.defect_id,
-            title: defect.title,
-            project: {
-                direct: defect.project_name,
-                nested: defect.project,
-                project_id: defect.project_id
-            },
-            status: {
-                direct: defect.status_name,
-                nested: defect.status,
-                status_id: defect.status_id
-            },
-            assignee: {
-                direct: defect.assignee_name,
-                nested: defect.assignee,
-                assigned_to: defect.assigned_to,
-                assignee_id: defect.assignee_id
-            },
-            reporter: {
-                direct: defect.reporter_name,
-                nested: defect.reporter,
-                created_by: defect.created_by,
-                reporter_id: defect.reporter_id
-            },
-            fullObject: defect
-        });
     };
 
     if (loading && token) {
@@ -295,7 +270,6 @@ export default function DefectsTable({ onEdit, onView, refreshKey }) {
 
     return (
         <>
-            {/* Модальное окно удаления */}
             {deleteId && (
                 <div className="fixed inset-0 bg-gray-900 bg-opacity-70 z-50 flex items-center justify-center p-4">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm">
@@ -326,7 +300,6 @@ export default function DefectsTable({ onEdit, onView, refreshKey }) {
                 </div>
             )}
 
-            {/* Панель фильтров */}
             {showFilters && (
                 <div className="bg-white p-4 rounded-lg border border-gray-200 mb-4">
                     <div className="flex items-center justify-between mb-4">
@@ -348,7 +321,6 @@ export default function DefectsTable({ onEdit, onView, refreshKey }) {
                     </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                        {/* Статус */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Статус</label>
                             <select
@@ -365,7 +337,6 @@ export default function DefectsTable({ onEdit, onView, refreshKey }) {
                             </select>
                         </div>
 
-                        {/* Приоритет */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Приоритет</label>
                             <select
@@ -382,7 +353,6 @@ export default function DefectsTable({ onEdit, onView, refreshKey }) {
                             </select>
                         </div>
 
-                        {/* Проект */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Проект</label>
                             <select
@@ -399,7 +369,6 @@ export default function DefectsTable({ onEdit, onView, refreshKey }) {
                             </select>
                         </div>
 
-                        {/* Назначен */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Назначен</label>
                             <select
@@ -416,7 +385,6 @@ export default function DefectsTable({ onEdit, onView, refreshKey }) {
                             </select>
                         </div>
 
-                        {/* Автор */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Автор</label>
                             <select
@@ -436,19 +404,17 @@ export default function DefectsTable({ onEdit, onView, refreshKey }) {
                 </div>
             )}
 
-            {/* Заголовок и статистика */}
             <div className="mb-6">
                 <h1 className="text-2xl font-bold text-gray-900 mb-2">
                     Отслеживайте и управляйте дефектами в ваших проектах
                 </h1>
                 <div className="flex items-center gap-4">
                     <span className="text-sm text-gray-600">
-                        Найдено: {defects.length} дефектов
+                        Найдено: {totalCount} дефектов
                     </span>
                 </div>
             </div>
 
-            {/* Таблица дефектов */}
             <div className="bg-white shadow-lg rounded-xl overflow-hidden">
                 <div className="flex justify-between items-center p-4 border-b border-gray-200 bg-gray-50">
                     <div className="flex items-center gap-4">
@@ -495,8 +461,6 @@ export default function DefectsTable({ onEdit, onView, refreshKey }) {
                         </thead>
                         <tbody>
                             {defects.map((defect) => {
-                                logDefectData(defect);
-                                
                                 return (
                                     <tr key={defect.defect_id} className="bg-white border-b border-gray-100 hover:bg-gray-50 transition-colors">
                                         <td className="px-6 py-4 font-mono text-sm text-gray-600">

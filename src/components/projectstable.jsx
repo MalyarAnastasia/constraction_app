@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Edit2, Trash2, Loader2, Frown, Package, Eye, ChevronUp } from 'lucide-react';
 import { useAuth } from '../context/authcontex';
 
-export default function ProjectsTable({ onEdit, refreshKey }) {
+export default function ProjectsTable({ onEdit, refreshKey, currentPage, pageSize, onTotalCountChange }) {
     const { token } = useAuth();
     const [projects, setProjects] = useState([]);
     const [stages, setStages] = useState([]);
@@ -12,6 +12,7 @@ export default function ProjectsTable({ onEdit, refreshKey }) {
     const [deleteLoading, setDeleteLoading] = useState(false);
     const [expandedProject, setExpandedProject] = useState(null);
     const [projectDefects, setProjectDefects] = useState({});
+    const [totalCount, setTotalCount] = useState(0);
 
     const fetchProjects = useCallback(async () => {
         if (!token) {
@@ -23,8 +24,13 @@ export default function ProjectsTable({ onEdit, refreshKey }) {
             setLoading(true);
             setError(null);
 
+            const queryParams = new URLSearchParams({
+                page: currentPage.toString(),
+                limit: pageSize.toString()
+            });
+
             const [projectsResponse, stagesResponse] = await Promise.all([
-                fetch('/api/projects', {
+                fetch(`/api/projects?${queryParams}`, {
                     headers: {
                         'Authorization': `Bearer ${token}`,
                     }
@@ -44,19 +50,23 @@ export default function ProjectsTable({ onEdit, refreshKey }) {
             const projectsData = await projectsResponse.json();
             const stagesData = stagesResponse.ok ? await stagesResponse.json() : [];
 
-            console.log("Полученные проекты:", projectsData);
-            console.log("Полученные этапы:", stagesData);
-            
-            setProjects(projectsData);
+            setProjects(projectsData.projects || projectsData);
             setStages(stagesData);
+            
+            if (projectsData.totalCount !== undefined) {
+                setTotalCount(projectsData.totalCount);
+                onTotalCountChange(projectsData.totalCount);
+            } else if (Array.isArray(projectsData)) {
+                setTotalCount(projectsData.length);
+                onTotalCountChange(projectsData.length);
+            }
 
         } catch (err) {
-            console.error("Error fetching projects:", err);
             setError(err.message || 'Не удалось загрузить данные о проектах.');
         } finally {
             setLoading(false);
         }
-    }, [token]);
+    }, [token, currentPage, pageSize, onTotalCountChange]);
 
     useEffect(() => {
         if (token) {
@@ -80,9 +90,10 @@ export default function ProjectsTable({ onEdit, refreshKey }) {
             }
 
             setProjects(projects.filter(p => p.project_id !== projectId));
+            setTotalCount(prev => prev - 1);
+            onTotalCountChange(totalCount - 1);
             
         } catch (err) {
-            console.error("Error deleting project:", err);
             setError(err.message || 'Ошибка при удалении проекта.');
         } finally {
             setDeleteLoading(false);
@@ -106,7 +117,6 @@ export default function ProjectsTable({ onEdit, refreshKey }) {
                 }));
             }
         } catch (err) {
-            console.error('Ошибка загрузки дефектов:', err);
         }
     };
 
