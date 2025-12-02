@@ -580,10 +580,11 @@ app.get('/api/export/defects', authMiddleware, roleMiddleware([1, 2]), async (re
         });
 
         const csvData = [headerRow, ...dataRows].join('\n');
+        const csvWithBOM = '\uFEFF' + csvData;
 
         res.set('Content-Type', 'text/csv; charset=utf-8');
         res.set('Content-Disposition', 'attachment; filename="defects_export.csv"');
-        res.send(csvData);
+        res.send(csvWithBOM);
 
     } catch (err) {
         console.error('Ошибка при экспорте дефектов', err); 
